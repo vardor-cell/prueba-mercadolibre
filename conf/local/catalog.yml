@@ -1,0 +1,11 @@
+access_logs:
+  type: pandas.CSVDataset
+  filepath: data/01_raw/access_logs.csv
+
+permission_inventory:
+  type: pandas.CSVDataset
+  filepath: data/01_raw/permission_inventory.csv
+
+user_inventory:
+  type: pandas.CSVDataset
+  filepath: data/01_raw/user_inventory.csv
