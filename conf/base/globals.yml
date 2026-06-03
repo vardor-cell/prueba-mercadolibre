@@ -1,0 +1,7 @@
+# Configuración global de BigQuery.
+# REEMPLAZÁ `project` con tu PROJECT_ID de GCP (el del BigQuery Sandbox).
+# El project_id NO es secreto, por eso vive en base (versionado).
+# La credencial (llave JSON) sí es secreta y va en conf/local/ (gitignored).
+gcp:
+  project: prueba-mercado-libre-498322
+  dataset: risk_profiling

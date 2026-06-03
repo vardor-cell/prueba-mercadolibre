@@ -1,0 +1,29 @@
+[tool.kedro]
+package_name = "prueba_mercadolibre"
+project_name = "prueba-mercadolibre"
+kedro_init_version = "1.4.0"
+source_dir = "src"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "prueba-mercadolibre"
+readme = "README.md"
+dynamic = ["dependencies", "version"]
+
+[project.scripts]
+prueba-mercadolibre = "prueba_mercadolibre.__main__:main"
+
+[project.entry-points."kedro.hooks"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = "requirements.txt"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = false
+
+[tool.kedro_telemetry]
+project_id = "3a6d97d14de547bbb55f45958774cb52"

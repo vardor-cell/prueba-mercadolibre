@@ -6,3 +6,10 @@ kedro-datasets>=9.1
 kedro-viz>=6.7.0
 scikit-learn~=1.5.1; python_version <= '3.10'
 scikit-learn~=1.8.0; python_version > '3.10'
+
+# BigQuery (datos en la nube)
+pandas-gbq>=0.23
+google-cloud-bigquery>=3.25
+db-dtypes>=1.3
+pyarrow>=16.0
+tqdm>=4.66

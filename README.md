@@ -27,6 +27,33 @@ To install them, run:
 pip install -r requirements.txt
 ```
 
+## Datos en BigQuery (free tier — Sandbox)
+
+Todo el flujo de datos reside en BigQuery (dataset `risk_profiling`). El pipeline lee los datos raw de BQ y escribe ahí intermedios, features y scores. El único artefacto local es el modelo (`data/06_models/anomaly_ensemble.pkl`).
+
+### Setup inicial (una vez)
+
+1. **Activar BigQuery Sandbox**: entrá a [BigQuery Console](https://console.cloud.google.com/bigquery) con tu cuenta Google (crea un proyecto automático, sin tarjeta). Anotá el **PROJECT_ID**.
+2. **Service Account**: IAM → Service Accounts → crear `kedro-bq` con roles **BigQuery Data Editor** + **BigQuery Job User**. Generar una **llave JSON** y guardarla en `conf/local/gcp-key.json` (gitignored).
+3. **Configurar el project**: editá `conf/base/globals.yml` y reemplazá `gcp.project` con tu PROJECT_ID.
+4. **Instalar deps**: `pip install -r requirements.txt`
+
+### Correr el pipeline
+
+```bash
+kedro run    # lee raw de BQ y escribe TODO el flujo a BQ (11 tablas)
+```
+
+> Los datos raw ya están cargados en el dataset `risk_profiling`. Si necesitás
+> re-sembrar las tablas raw desde los CSV (p. ej. tras el expiry de 60 días),
+> cargá `data/01_raw/*.csv` a BigQuery con la consola o el CLI `bq load`.
+
+### Notas del Sandbox
+- Límites free: 10 GB storage / 1 TB query por mes (nuestros datos son ~1.5 MB).
+- **Las tablas expiran a los 60 días**. Re-correr el pipeline las refresca.
+- Sin streaming ni Cloud Run → la orquestación se hace con GitHub Actions (cron).
+- Para desarrollo offline sin BQ, descomentá los overrides CSV en `conf/local/catalog.yml`.
+
 ## How to run your Kedro pipeline
 
 You can run your Kedro project with:

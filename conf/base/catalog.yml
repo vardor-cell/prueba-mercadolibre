@@ -1,0 +1,69 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Catálogo de datos — TODO el flujo reside en BigQuery (dataset `risk_profiling`).
+# El project_id y el dataset se leen de conf/base/globals.yml.
+# Las credenciales (gbq_creds) se resuelven desde conf/local/credentials.yml.
+# Excepción: anomaly_model (.pkl) queda local — BigQuery no almacena binarios.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Plantilla reutilizable (Kedro ignora las claves que empiezan con "_").
+_gbq: &gbq
+  type: pandas.GBQTableDataset
+  project: ${globals:gcp.project}
+  dataset: ${globals:gcp.dataset}
+  credentials: gbq_creds
+  save_args:
+    if_exists: replace
+
+# ── 01_raw: datasets fuente (carga inicial vía scripts/load_raw_to_bigquery.py) ─
+user_inventory:
+  <<: *gbq
+  table_name: user_inventory
+
+permission_inventory:
+  <<: *gbq
+  table_name: permission_inventory
+
+access_logs:
+  <<: *gbq
+  table_name: access_logs
+
+# ── 02_intermediate: datasets limpios ─────────────────────────────────────────
+users_clean:
+  <<: *gbq
+  table_name: users_clean
+
+perms_clean:
+  <<: *gbq
+  table_name: perms_clean
+
+logs_clean:
+  <<: *gbq
+  table_name: logs_clean
+
+# ── 03_primary: matriz de features ────────────────────────────────────────────
+user_features:
+  <<: *gbq
+  table_name: user_features
+
+# ── 05_model_input: scoring inputs ────────────────────────────────────────────
+hard_rule_scores:
+  <<: *gbq
+  table_name: hard_rule_scores
+
+anomaly_scores:
+  <<: *gbq
+  table_name: anomaly_scores
+
+impact_scores:
+  <<: *gbq
+  table_name: impact_scores
+
+# ── 06_models: artefacto del modelo (LOCAL — no es tabular) ───────────────────
+anomaly_model:
+  type: pickle.PickleDataset
+  filepath: data/06_models/anomaly_ensemble.pkl
+
+# ── 07_model_output: scores finales ───────────────────────────────────────────
+risk_scores:
+  <<: *gbq
+  table_name: risk_scores

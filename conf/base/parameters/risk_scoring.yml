@@ -1,0 +1,48 @@
+risk_scoring:
+  isolation_forest:
+    n_estimators: 500          # tuned for ranking stability (notebook 02)
+    max_features: 0.9          # tuned: more inter-tree diversity
+    max_samples: "auto"
+    contamination: 0.05        # no afecta el ranking (solo predict()); documental
+    random_state: 42
+
+  # Anomaly ENSEMBLE: weighted average of three independent detectors.
+  # IF is persisted; LOF and Z-score are transductive (recomputed at scoring).
+  ensemble:
+    lof_n_neighbors: 20
+    weight_isolation_forest: 1.0
+    weight_lof: 1.0
+    weight_zscore: 1.0
+
+  rule_weights:
+    access_without_perm: 30
+    inactive_with_access: 45
+    expired_perm_access: 20
+    privilege_escalation: 30
+    external_very_high_no_exp: 15
+    cross_dept_access: 20
+    external_insider: 20
+
+  anomaly_max_contribution: 40
+
+  # Soft impact modulation: final = base_aditivo × (floor + (1-floor)·impacto)
+  # El impacto (blast radius) no domina — solo amortigua hasta (1-floor) a usuarios
+  # de baja criticidad. Referencia: NIST 800-30 (riesgo ~ probabilidad × impacto),
+  # aplicado de forma suave para no enterrar comportamiento anómalo de bajo impacto.
+  impact:
+    criticality_map:
+      LOW: 0.25
+      MEDIUM: 0.5
+      HIGH: 0.75
+      VERY_HIGH: 1.0
+    max_weight: 0.7         # peso de la criticidad máxima (permisos ∪ accesos)
+    breadth_weight: 0.3     # peso del recuento de recursos HIGH+ (amplitud)
+    multiplier_floor: 0.7   # k: un usuario de impacto nulo conserva el 70% del score base
+
+  # Recalibrados tras la modulación de impacto (el multiplicador ≤1 baja los scores).
+  # Cortes ubicados en gaps naturales: 64 en el gap 73→50 que aísla el top claro;
+  # 28 bajo el cluster denso ~31→27. Funnel resultante: ~6 VH / 2 H / 16 M / resto LOW.
+  score_thresholds:
+    low_max: 28
+    medium_max: 46
+    high_max: 64

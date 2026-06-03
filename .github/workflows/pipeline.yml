@@ -1,0 +1,52 @@
+name: Risk Scoring Pipeline
+
+# Orquestación del pipeline en GitHub Actions (free tier).
+# - schedule: corre automáticamente (cron, diario 06:00 UTC).
+# - workflow_dispatch: permite ejecutarlo a mano desde la pestaña Actions.
+#
+# El pipeline lee los datos raw de BigQuery y reescribe todo el flujo a BQ.
+# Esto además refresca las tablas (el Sandbox las expira a los 60 días).
+#
+# REQUISITO — configurar en el repo (Settings → Secrets and variables → Actions):
+#   Secret  GCP_SA_KEY  = contenido completo del JSON de la service account.
+# (El PROJECT_ID ya vive versionado en conf/base/globals.yml, no es secreto.)
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # diario 06:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Configure GCP credentials
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        run: |
+          mkdir -p conf/local
+          printf '%s' "$GCP_SA_KEY" > conf/local/gcp-key.json
+          echo 'gbq_creds: conf/local/gcp-key.json' > conf/local/credentials.yml
+
+      - name: Run Kedro pipeline
+        run: kedro run
+
+      - name: Upload trained model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: anomaly-model
+          path: data/06_models/anomaly_ensemble.pkl
+          if-no-files-found: warn
+          retention-days: 30
