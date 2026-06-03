@@ -1,5 +1,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # Catálogo de datos — TODO el flujo reside en BigQuery (dataset `risk_profiling`).
+# Las tablas usan prefijo de capa (l1..l5) para agruparse en la consola:
+#   l1_ = raw | l2_ = intermediate | l3_ = primary | l4_ = model_input | l5_ = output
 # El project_id y el dataset se leen de conf/base/globals.yml.
 # Las credenciales (gbq_creds) se resuelven desde conf/local/credentials.yml.
 # Excepción: anomaly_model (.pkl) queda local — BigQuery no almacena binarios.
@@ -14,56 +16,56 @@ _gbq: &gbq
   save_args:
     if_exists: replace
 
-# ── 01_raw: datasets fuente (carga inicial vía scripts/load_raw_to_bigquery.py) ─
+# ── l1 · 01_raw: datasets fuente ──────────────────────────────────────────────
 user_inventory:
   <<: *gbq
-  table_name: user_inventory
+  table_name: l1_user_inventory
 
 permission_inventory:
   <<: *gbq
-  table_name: permission_inventory
+  table_name: l1_permission_inventory
 
 access_logs:
   <<: *gbq
-  table_name: access_logs
+  table_name: l1_access_logs
 
-# ── 02_intermediate: datasets limpios ─────────────────────────────────────────
+# ── l2 · 02_intermediate: datasets limpios ────────────────────────────────────
 users_clean:
   <<: *gbq
-  table_name: users_clean
+  table_name: l2_users_clean
 
 perms_clean:
   <<: *gbq
-  table_name: perms_clean
+  table_name: l2_perms_clean
 
 logs_clean:
   <<: *gbq
-  table_name: logs_clean
+  table_name: l2_logs_clean
 
-# ── 03_primary: matriz de features ────────────────────────────────────────────
+# ── l3 · 03_primary: matriz de features ───────────────────────────────────────
 user_features:
   <<: *gbq
-  table_name: user_features
+  table_name: l3_user_features
 
-# ── 05_model_input: scoring inputs ────────────────────────────────────────────
+# ── l4 · 05_model_input: scoring inputs ───────────────────────────────────────
 hard_rule_scores:
   <<: *gbq
-  table_name: hard_rule_scores
+  table_name: l4_hard_rule_scores
 
 anomaly_scores:
   <<: *gbq
-  table_name: anomaly_scores
+  table_name: l4_anomaly_scores
 
 impact_scores:
   <<: *gbq
-  table_name: impact_scores
+  table_name: l4_impact_scores
 
 # ── 06_models: artefacto del modelo (LOCAL — no es tabular) ───────────────────
 anomaly_model:
   type: pickle.PickleDataset
   filepath: data/06_models/anomaly_ensemble.pkl
 
-# ── 07_model_output: scores finales ───────────────────────────────────────────
+# ── l5 · 07_model_output: scores finales ──────────────────────────────────────
 risk_scores:
   <<: *gbq
-  table_name: risk_scores
+  table_name: l5_risk_scores
