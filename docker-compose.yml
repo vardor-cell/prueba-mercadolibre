@@ -1,0 +1,40 @@
+# Correr el proyecto localmente en Docker, conectado a BigQuery.
+#
+# Requisitos (ya deberían existir):
+#   conf/local/gcp-key.json       (llave de la service account)
+#   conf/local/credentials.yml    (gbq_creds: conf/local/gcp-key.json)
+#
+# Servicios:
+#   kedro → corre el pipeline (data → BigQuery)
+#   api   → levanta la API REST FastAPI en http://localhost:8000
+#
+# Uso:
+#   docker compose up --build                → levanta kedro (pipeline) + api
+#   docker compose up --build api            → solo la API
+#   docker compose run --rm kedro kedro run --pipeline=ingest   → solo ingesta
+#   docker compose run --rm kedro bash       → shell interactiva
+#
+# Las credenciales y los datos se montan como volúmenes: no quedan en la imagen.
+
+services:
+  kedro:
+    build: .
+    image: prueba-mercadolibre:local
+    container_name: prueba-mercadolibre
+    volumes:
+      - ./conf/local:/app/conf/local:ro   # credenciales BigQuery (solo lectura)
+      - ./data:/app/data                  # outputs locales (ej. modelo .pkl)
+    # El comando por defecto (kedro run) viene del Dockerfile.
+
+  api:
+    build: ./api
+    image: risk-profiling-api:local
+    container_name: risk-profiling-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./conf/local:/app/conf/local:ro   # credenciales (solo lectura)
+    environment:
+      - GCP_PROJECT_ID=prueba-mercado-libre-498322
+      - GCP_KEY_PATH=/app/conf/local/gcp-key.json
+    # El comando por defecto (uvicorn) viene del api/Dockerfile.

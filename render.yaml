@@ -1,0 +1,20 @@
+# Blueprint de Render — despliega la API REST automáticamente desde GitHub.
+# Render lee este archivo al conectar el repo (New → Blueprint).
+# Auto-deploy en cada push que toque api/.
+services:
+  - type: web
+    name: risk-profiling-api
+    runtime: docker
+    rootDir: api
+    dockerfilePath: ./Dockerfile
+    plan: free
+    autoDeploy: true
+    buildFilter:
+      paths:
+        - "api/**"
+    healthCheckPath: /health
+    envVars:
+      - key: GCP_PROJECT_ID
+        value: prueba-mercado-libre-498322
+      - key: GCP_SA_KEY
+        sync: false   # secreto: pegar el contenido del gcp-key.json en el dashboard

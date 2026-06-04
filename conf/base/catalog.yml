@@ -16,6 +16,20 @@ _gbq: &gbq
   save_args:
     if_exists: replace
 
+# ── Fuentes locales para la ingesta (pipeline `ingest`) ───────────────────────
+# CSV en data/01_raw/ → se suben a las tablas l1_* de BigQuery.
+user_inventory_local:
+  type: pandas.CSVDataset
+  filepath: data/01_raw/user_inventory.csv
+
+permission_inventory_local:
+  type: pandas.CSVDataset
+  filepath: data/01_raw/permission_inventory.csv
+
+access_logs_local:
+  type: pandas.CSVDataset
+  filepath: data/01_raw/access_logs.csv
+
 # ── l1 · 01_raw: datasets fuente ──────────────────────────────────────────────
 user_inventory:
   <<: *gbq

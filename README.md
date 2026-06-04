@@ -48,6 +48,38 @@ kedro run    # lee raw de BQ y escribe TODO el flujo a BQ (11 tablas)
 > re-sembrar las tablas raw desde los CSV (p. ej. tras el expiry de 60 días),
 > cargá `data/01_raw/*.csv` a BigQuery con la consola o el CLI `bq load`.
 
+### Correr con Docker (conectado a BigQuery)
+
+`docker-compose.yml` levanta el pipeline en un contenedor, montando las credenciales
+(no quedan en la imagen).
+
+**1) Construir la imagen** (una vez, y cada vez que cambie el código):
+
+```bash
+docker compose build
+```
+
+**2) Correr cualquier pipeline** sobreescribiendo el comando del contenedor:
+
+```bash
+docker compose run --rm kedro kedro run                    # proceso completo (sin ingesta)
+docker compose run --rm kedro kedro run --pipeline=ingest  # solo ingesta (CSV local → BQ)
+docker compose run --rm kedro kedro run --pipeline=full    # ingesta + proceso completo
+docker compose run --rm kedro kedro run --tags=score       # solo scoring
+docker compose run --rm kedro bash                         # shell interactiva
+```
+
+O directamente `docker compose up --build` para construir y correr el pipeline completo
+en un solo paso.
+
+> **Importante:** el Dockerfile copia `src/` al construir la imagen, así que tras
+> cualquier cambio de código hay que volver a correr `docker compose build`
+> (o usar `--build`). Si no, el contenedor corre con la versión anterior.
+
+Requiere `conf/local/gcp-key.json` y `conf/local/credentials.yml` (gitignored), que se
+montan como volumen de solo lectura. Los CSV locales de `data/01_raw/` (para la ingesta)
+también se montan vía el volumen `data/`.
+
 ### Notas del Sandbox
 - Límites free: 10 GB storage / 1 TB query por mes (nuestros datos son ~1.5 MB).
 - **Las tablas expiran a los 60 días**. Re-correr el pipeline las refresca.

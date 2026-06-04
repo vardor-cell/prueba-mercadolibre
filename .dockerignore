@@ -1,0 +1,18 @@
+# Secretos y config local (se montan como volúmenes, nunca en la imagen)
+conf/local/
+
+# Datos y artefactos (se montan / se generan en runtime)
+data/
+
+# Entornos y caches
+.venv/
+**/__pycache__/
+*.pyc
+
+# Cosas que no necesita el contenedor
+.git/
+.github/
+notebooks/
+docs/
+*.md
+.gitignore
