@@ -1,3 +1,4 @@
+"""Definición del pipeline ingest (carga de CSV locales a BigQuery)."""
 from kedro.pipeline import Pipeline, node
 
 from .nodes import passthrough

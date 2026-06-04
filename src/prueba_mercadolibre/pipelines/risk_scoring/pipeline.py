@@ -1,3 +1,4 @@
+"""Definición del pipeline risk_scoring (features → reglas → ensemble → impacto → score)."""
 from kedro.pipeline import Pipeline, node
 
 from .nodes import (
@@ -11,6 +12,10 @@ from .nodes import (
 
 
 def create_pipeline(**kwargs) -> Pipeline:
+    """Arma el pipeline de scoring. Nodos con tags ``train``/``score`` para poder
+    ejecutar solo entrenamiento o solo inferencia:
+    build_feature_matrix → compute_hard_rule_scores → train_anomaly_ensemble →
+    score_anomaly_ensemble → compute_impact_factor → combine_and_categorize."""
     return Pipeline(
         [
             node(

@@ -28,11 +28,13 @@ class RiskResponse(BaseModel):
 
 @app.get("/health")
 def health() -> dict:
+    """Health check: devuelve {'status': 'ok'} para readiness/liveness checks."""
     return {"status": "ok"}
 
 
 @app.get("/users/{user_id}/risk", response_model=RiskResponse)
 def user_risk(user_id: str) -> dict:
+    """Devuelve el risk score, categoría y señales de un usuario. 404 si no existe."""
     result = bq.get_user_risk(user_id)
     if result is None:
         raise HTTPException(status_code=404, detail=f"Usuario '{user_id}' no encontrado")
@@ -46,6 +48,8 @@ def users(
     ),
     limit: int = Query(default=10, ge=1, le=500, description="Máximo de usuarios a devolver"),
 ) -> list[dict]:
+    """Lista usuarios ordenados por score descendente, opcionalmente filtrados por
+    categoría. 422 si la categoría no es válida."""
     if category is not None:
         category = category.upper()
         if category not in bq.VALID_CATEGORIES:

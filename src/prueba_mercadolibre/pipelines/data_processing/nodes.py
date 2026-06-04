@@ -10,7 +10,6 @@ Rules:
 """
 import logging
 
-import numpy as np
 import pandas as pd
 
 log = logging.getLogger(__name__)
@@ -29,14 +28,17 @@ CRIT_ORDER = pd.CategoricalDtype(
 )
 
 
-def clean_user_inventory(user_inventory: pd.DataFrame) -> pd.DataFrame:
-    """Clean user_inventory → 02_intermediate/users_clean.csv"""
-    df = user_inventory.copy()
-    original_len = len(df)
-
-    # Strip whitespace from all object columns
+def _strip_str_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Quita espacios en blanco de todas las columnas de texto (in place)."""
     str_cols = df.select_dtypes("object").columns
     df[str_cols] = df[str_cols].apply(lambda s: s.str.strip())
+    return df
+
+
+def clean_user_inventory(user_inventory: pd.DataFrame) -> pd.DataFrame:
+    """Clean user_inventory → 02_intermediate/users_clean.csv"""
+    df = _strip_str_columns(user_inventory.copy())
+    original_len = len(df)
 
     # Parse dates
     df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
@@ -64,11 +66,8 @@ def clean_user_inventory(user_inventory: pd.DataFrame) -> pd.DataFrame:
 
 def clean_permission_inventory(permission_inventory: pd.DataFrame) -> pd.DataFrame:
     """Clean permission_inventory → 02_intermediate/perms_clean.csv"""
-    df = permission_inventory.copy()
+    df = _strip_str_columns(permission_inventory.copy())
     original_len = len(df)
-
-    str_cols = df.select_dtypes("object").columns
-    df[str_cols] = df[str_cols].apply(lambda s: s.str.strip())
 
     # Parse dates
     df["assigned_at"] = pd.to_datetime(df["assigned_at"], errors="coerce")
@@ -111,11 +110,8 @@ def clean_permission_inventory(permission_inventory: pd.DataFrame) -> pd.DataFra
 
 def clean_access_logs(access_logs: pd.DataFrame) -> pd.DataFrame:
     """Clean access_logs → 02_intermediate/logs_clean.csv"""
-    df = access_logs.copy()
+    df = _strip_str_columns(access_logs.copy())
     original_len = len(df)
-
-    str_cols = df.select_dtypes("object").columns
-    df[str_cols] = df[str_cols].apply(lambda s: s.str.strip())
 
     # Parse timestamp
     df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")

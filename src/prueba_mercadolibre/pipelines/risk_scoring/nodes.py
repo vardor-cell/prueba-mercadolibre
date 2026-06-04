@@ -73,6 +73,7 @@ def _z_score_within_group(
     """Z-score of value_col relative to peers in group_cols. Uses ddof=0 to avoid
     NaN for single-member or two-member groups."""
     def _z(grp):
+        """Z-score de un grupo; devuelve 0 si el desvío es 0 o NaN."""
         std = grp[value_col].std(ddof=0)
         if std == 0 or pd.isna(std):
             return pd.Series(0.0, index=grp.index)
@@ -88,6 +89,11 @@ def _shannon_entropy(actions: list) -> float:
     cnt = Counter(actions)
     total = len(actions)
     return -sum((c / total) * math.log2(c / total) for c in cnt.values())
+
+
+def _with_crit_num(perms: pd.DataFrame) -> pd.DataFrame:
+    """Agrega la columna `crit_num` (criticidad numérica 1–4) a permission_inventory."""
+    return perms.assign(crit_num=perms["criticality"].astype(str).map(CRITICALITY_NUM))
 
 
 # ── Node 1 ────────────────────────────────────────────────────────────────────
@@ -108,11 +114,7 @@ def build_feature_matrix(
 
     # Resource → criticality_num lookup (take max criticality if a resource
     # appears with different criticality levels across permissions)
-    res_crit = (
-        perms.assign(crit_num=perms["criticality"].astype(str).map(CRITICALITY_NUM))
-        .groupby("resource_id")["crit_num"]
-        .max()
-    )
+    res_crit = _with_crit_num(perms).groupby("resource_id")["crit_num"].max()
     logs["crit_num"] = logs["resource_id"].map(res_crit).fillna(0)
 
     # ── Access-log aggregates per user ────────────────────────────────────────
@@ -201,27 +203,19 @@ def compute_hard_rule_scores(
     perms["expires_at_dt"] = pd.to_datetime(perms["expires_at"], errors="coerce")
     logs["timestamp_dt"] = pd.to_datetime(logs["timestamp"])
 
-    user_status = users.set_index("user_id")["status"].to_dict()
-    user_type   = users.set_index("user_id")["user_type"].to_dict()
-    user_dept   = users.set_index("user_id")["department"].to_dict()
+    users_idx = users.set_index("user_id")
+    user_status = users_idx["status"].to_dict()
+    user_type   = users_idx["user_type"].to_dict()
+    user_dept   = users_idx["department"].to_dict()
 
-    # Resource criticality num
-    res_crit_num = (
-        perms.assign(crit_num=perms["criticality"].astype(str).map(CRITICALITY_NUM))
-        .groupby("resource_id")["crit_num"]
-        .max()
-        .to_dict()
-    )
+    # Lookups de criticidad (numérica) por recurso y por usuario
+    perms_crit = _with_crit_num(perms)
+    res_crit_num = perms_crit.groupby("resource_id")["crit_num"].max().to_dict()
+    user_max_perm_crit = perms_crit.groupby("user_id")["crit_num"].max().to_dict()
 
     # Pre-built lookup structures
     user_perm_resources = (
         perms.groupby("user_id")["resource_id"].apply(set).to_dict()
-    )
-    user_max_perm_crit = (
-        perms.assign(crit_num=perms["criticality"].astype(str).map(CRITICALITY_NUM))
-        .groupby("user_id")["crit_num"]
-        .max()
-        .to_dict()
     )
 
     # (user_id, resource_id) → list of expires_at_dt values
@@ -520,6 +514,7 @@ def combine_and_categorize(
 
     # Base category
     def _category(score):
+        """Mapea un score [0-100] a su categoría según los umbrales configurados."""
         if score <= low_max:  return "LOW"
         if score <= med_max:  return "MEDIUM"
         if score <= high_max: return "HIGH"
@@ -539,6 +534,8 @@ def combine_and_categorize(
     feat_lookup = user_features.set_index("user_id")
 
     def _if_signals(uid: str) -> list:
+        """Señales del lado ML: las 2 features del usuario más desviadas de la media
+        poblacional (z > 1), traducidas a texto legible."""
         if uid not in feat_lookup.index:
             return []
         row_vals = feat_lookup.loc[uid, FEATURE_COLS].values.astype(float)
@@ -550,6 +547,7 @@ def combine_and_categorize(
         ]
 
     def _impact_signal(i_max: float) -> list:
+        """Señal del lado impacto: marca el blast radius si la criticidad máxima es alta."""
         if i_max >= 1.0:
             return ["Impact: máximo blast radius (recursos VERY_HIGH)"]
         if i_max >= 0.75:

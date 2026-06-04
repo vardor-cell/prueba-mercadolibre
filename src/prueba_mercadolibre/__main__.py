@@ -10,6 +10,9 @@ from kedro.framework.project import configure_project
 
 
 def main(*args, **kwargs) -> Any:
+    """Punto de entrada del proyecto: configura el package de Kedro y delega en el
+    comando ``run`` del CLI. Permite ejecutar el proyecto como ``prueba-mercadolibre``
+    o ``python -m prueba_mercadolibre``."""
     package_name = Path(__file__).parent.name
     configure_project(package_name)
 

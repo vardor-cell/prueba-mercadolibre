@@ -42,12 +42,15 @@ def _load_credentials():
 
 @lru_cache(maxsize=1)
 def _client() -> bigquery.Client:
+    """Devuelve un cliente de BigQuery (cacheado). El project sale de GCP_PROJECT_ID
+    o, en su defecto, del project_id de la llave."""
     creds, key_project = _load_credentials()
     project = os.environ.get("GCP_PROJECT_ID", key_project)
     return bigquery.Client(project=project, credentials=creds)
 
 
 def _table_fqn() -> str:
+    """Nombre totalmente calificado de la tabla de scores, con backticks para SQL."""
     return f"`{_client().project}.{DATASET}.{TABLE}`"
 
 
