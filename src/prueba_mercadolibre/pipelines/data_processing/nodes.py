@@ -1,12 +1,16 @@
 """Data processing pipeline nodes.
 
-Cleans the three raw datasets and writes them to 02_intermediate.
-Rules:
-- Parse and standardize all date columns.
-- Strip whitespace from categorical string fields.
-- Validate domain values; drop rows with unrecognized values and log the count.
-- Cap session_duration_sec outliers at p99 to prevent IF feature distortion.
-- Add lightweight quality flags used later by scoring rules.
+Limpia los tres datasets raw (capa l1) y los deja en la capa l2 (intermediate).
+Reglas de limpieza aplicadas:
+- Quitar espacios en blanco de los campos de texto.
+- Quitar filas duplicadas exactas.
+- Parsear y estandarizar las columnas de fecha.
+- Descartar filas con valores fuera de dominio (user_type, status, criticality,
+  action, resource_type) y con claves nulas (user_id, resource_id).
+- Descartar permisos con fechas inconsistentes (expires_at < assigned_at).
+- Capar `session_duration_sec` al p99 (outliers altos) y a 0 (valores negativos).
+- Agregar flags de calidad usados aguas abajo (has_manager, has_expiry).
+Cada descarte se registra en el log con su conteo, para auditoría.
 """
 import logging
 
@@ -28,6 +32,8 @@ CRIT_ORDER = pd.CategoricalDtype(
 )
 
 
+# ── Helpers de limpieza ───────────────────────────────────────────────────────
+
 def _strip_str_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Quita espacios en blanco de todas las columnas de texto (in place)."""
     str_cols = df.select_dtypes("object").columns
@@ -35,9 +41,31 @@ def _strip_str_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _drop_duplicates(df: pd.DataFrame, name: str) -> pd.DataFrame:
+    """Quita filas duplicadas exactas y registra cuántas se eliminaron."""
+    n = int(df.duplicated().sum())
+    if n:
+        log.warning("%s: dropping %d duplicate rows", name, n)
+        df = df.drop_duplicates()
+    return df
+
+
+def _drop_null_keys(df: pd.DataFrame, cols: list, name: str) -> pd.DataFrame:
+    """Descarta filas con valores nulos en columnas clave (ej. user_id, resource_id)."""
+    mask = df[cols].isna().any(axis=1)
+    if mask.any():
+        log.warning("%s: dropping %d rows with null key(s) %s", name, int(mask.sum()), cols)
+        df = df[~mask]
+    return df
+
+
+# ── Nodos ─────────────────────────────────────────────────────────────────────
+
 def clean_user_inventory(user_inventory: pd.DataFrame) -> pd.DataFrame:
     """Clean user_inventory → 02_intermediate/users_clean.csv"""
     df = _strip_str_columns(user_inventory.copy())
+    df = _drop_duplicates(df, "user_inventory")
+    df = _drop_null_keys(df, ["user_id"], "user_inventory")
     original_len = len(df)
 
     # Parse dates
@@ -58,8 +86,7 @@ def clean_user_inventory(user_inventory: pd.DataFrame) -> pd.DataFrame:
     df["has_manager"] = df["manager_id"].notna().astype(int)
 
     log.info(
-        "users_clean: %d → %d rows (dropped %d invalid)",
-        original_len, len(df), original_len - len(df),
+        "users_clean: %d → %d rows", original_len, len(df),
     )
     return df.reset_index(drop=True)
 
@@ -67,6 +94,8 @@ def clean_user_inventory(user_inventory: pd.DataFrame) -> pd.DataFrame:
 def clean_permission_inventory(permission_inventory: pd.DataFrame) -> pd.DataFrame:
     """Clean permission_inventory → 02_intermediate/perms_clean.csv"""
     df = _strip_str_columns(permission_inventory.copy())
+    df = _drop_duplicates(df, "permission_inventory")
+    df = _drop_null_keys(df, ["user_id", "resource_id"], "permission_inventory")
     original_len = len(df)
 
     # Parse dates
@@ -102,8 +131,7 @@ def clean_permission_inventory(permission_inventory: pd.DataFrame) -> pd.DataFra
     df["has_expiry"]   = df["expires_at"].notna().astype(int)
 
     log.info(
-        "perms_clean: %d → %d rows (dropped %d invalid)",
-        original_len, len(df), original_len - len(df),
+        "perms_clean: %d → %d rows", original_len, len(df),
     )
     return df.reset_index(drop=True)
 
@@ -111,6 +139,8 @@ def clean_permission_inventory(permission_inventory: pd.DataFrame) -> pd.DataFra
 def clean_access_logs(access_logs: pd.DataFrame) -> pd.DataFrame:
     """Clean access_logs → 02_intermediate/logs_clean.csv"""
     df = _strip_str_columns(access_logs.copy())
+    df = _drop_duplicates(df, "access_logs")
+    df = _drop_null_keys(df, ["user_id", "resource_id"], "access_logs")
     original_len = len(df)
 
     # Parse timestamp
@@ -133,18 +163,19 @@ def clean_access_logs(access_logs: pd.DataFrame) -> pd.DataFrame:
         )
         df = df[~bad_rows].copy()
 
-    # Cap session_duration_sec at p99 to prevent outlier distortion in IF features
+    # Cap session_duration_sec: piso en 0 (negativos = dato corrupto) y techo en p99
+    # (outliers altos que distorsionarían las features del modelo).
     p99 = df["session_duration_sec"].quantile(0.99)
-    outliers = (df["session_duration_sec"] > p99).sum()
-    if outliers > 0:
+    high = int((df["session_duration_sec"] > p99).sum())
+    neg  = int((df["session_duration_sec"] < 0).sum())
+    if high or neg:
         log.info(
-            "access_logs: capping %d session_duration_sec outliers at p99=%.0fs",
-            outliers, p99,
+            "access_logs: capando %d outliers altos (>p99=%.0fs) y %d negativos a 0",
+            high, p99, neg,
         )
-        df["session_duration_sec"] = df["session_duration_sec"].clip(upper=p99)
+        df["session_duration_sec"] = df["session_duration_sec"].clip(lower=0, upper=p99)
 
     log.info(
-        "logs_clean: %d → %d rows (dropped %d invalid, capped %d outliers)",
-        original_len, len(df), original_len - len(df), outliers,
+        "logs_clean: %d → %d rows", original_len, len(df),
     )
     return df.reset_index(drop=True)

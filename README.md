@@ -148,6 +148,26 @@ no almacena binarios.
 - `data_processing` → `l1` → `l2`
 - `risk_scoring` → `l2` → `l3` → `l4` → `l5`
 
+### Limpieza de datos (capa l2 · pipeline `data_processing`)
+
+Antes de modelar, cada dataset raw se limpia y valida. Todo descarte se **registra en el log**
+con su conteo (auditoría):
+
+- **Espacios en blanco** → se quitan de todos los campos de texto.
+- **Duplicados** → se eliminan filas repetidas exactas.
+- **Fechas** → se parsean y estandarizan (`created_at`, `assigned_at`, `expires_at`, `timestamp`).
+- **Filas inválidas que se descartan:**
+  - Valores fuera de dominio: `user_type`/`status`, `criticality`, `action`/`resource_type`.
+  - Claves nulas: `user_id`, `resource_id`.
+  - Timestamps no parseables (en logs).
+  - Permisos con `expires_at < assigned_at` (fecha inconsistente).
+- **Outliers** → `session_duration_sec` se capa al **p99** (techo, recorta valores extremos que
+  distorsionarían el modelo) y a **0** (piso, recorta negativos corruptos).
+- **Flags de calidad** → se agregan `has_manager` y `has_expiry` para uso aguas abajo.
+
+> En los datos actuales no hay duplicados ni valores corruptos, así que la limpieza no
+> descarta nada — pero está hecha para ser **robusta** si llegan datos sucios en producción.
+
 ---
 
 ## 🧮 El modelo de scoring
