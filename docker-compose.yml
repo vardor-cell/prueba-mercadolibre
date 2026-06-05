@@ -9,8 +9,9 @@
 #   api   → levanta la API REST FastAPI en http://localhost:8000
 #
 # Uso:
-#   docker compose up --build                → levanta kedro (pipeline) + api
+#   docker compose up --build                → levanta kedro (pipeline) + api + dashboard
 #   docker compose up --build api            → solo la API
+#   docker compose up --build dashboard      → solo el dashboard (Streamlit)
 #   docker compose run --rm kedro kedro run --pipeline=ingest   → solo ingesta
 #   docker compose run --rm kedro bash       → shell interactiva
 #
@@ -38,3 +39,16 @@ services:
       - GCP_PROJECT_ID=prueba-mercado-libre-498322
       - GCP_KEY_PATH=/app/conf/local/gcp-key.json
     # El comando por defecto (uvicorn) viene del api/Dockerfile.
+
+  dashboard:
+    build: ./dashboard
+    image: risk-profiling-dashboard:local
+    container_name: risk-profiling-dashboard
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./conf/local:/app/conf/local:ro   # credenciales (solo lectura)
+    environment:
+      - GCP_PROJECT_ID=prueba-mercado-libre-498322
+      - GCP_KEY_PATH=/app/conf/local/gcp-key.json
+    # El comando por defecto (streamlit run) viene del dashboard/Dockerfile.

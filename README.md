@@ -30,10 +30,11 @@ supervisado**, y modula el resultado por el **impacto** (blast radius) de cada u
 4. [El modelo de scoring](#-el-modelo-de-scoring)
 5. [Métricas del modelo](#-métricas-del-modelo)
 6. [La API REST](#-la-api-rest)
-7. [Hallazgos principales](#-hallazgos-principales)
-8. [Decisiones de modelado](#-decisiones-de-modelado)
-9. [Limitaciones](#-limitaciones)
-10. [Monitoreo en producción](#-monitoreo-en-producción)
+7. [El dashboard](#-el-dashboard)
+8. [Hallazgos principales](#-hallazgos-principales)
+9. [Decisiones de modelado](#-decisiones-de-modelado)
+10. [Limitaciones](#-limitaciones)
+11. [Monitoreo en producción](#-monitoreo-en-producción)
 
 ---
 
@@ -50,17 +51,19 @@ flowchart LR
 
     CSV -->|pipeline ingest| L1
     L5 -->|consulta en vivo| API["⚡ API FastAPI"]
+    L5 & L3 -->|consulta en vivo| DASH["📊 Dashboard Streamlit"]
     API --> USER(["👤 Cliente / SOC"])
+    DASH --> USER
 
     GHA["⏰ GitHub Actions · cron"] -. kedro run .-> BQ
     REN["🚀 Render"] -. hostea .-> API
-    DOCK["🐳 Docker Compose<br/>(local: kedro + api)"] -. levanta .-> API
+    DOCK["🐳 Docker Compose<br/>(local: kedro + api + dashboard)"] -. levanta .-> API & DASH
 
     classDef bqLayer fill:#e3f2fd,stroke:#1565c0,color:#0d47a1;
     classDef svc fill:#ede7f6,stroke:#5e35b1,color:#311b92;
     classDef infra fill:#f1f8e9,stroke:#558b2f,color:#33691e;
     class L1,L2,L3,L4,L5 bqLayer;
-    class API svc;
+    class API,DASH svc;
     class GHA,REN,DOCK infra;
 ```
 
@@ -68,7 +71,8 @@ flowchart LR
 - **Kedro** — pipelines reproducibles que limpian, generan features y calculan el score.
 - **BigQuery (Sandbox)** — almacena todo el flujo de datos en capas (free tier, sin tarjeta).
 - **FastAPI** — expone el score por usuario; consulta BigQuery en vivo.
-- **Docker Compose** — corre pipeline + API localmente, conectados a BigQuery.
+- **Streamlit + Plotly** — dashboard interactivo (bonus track); consulta BigQuery en vivo.
+- **Docker Compose** — corre pipeline + API + dashboard localmente, conectados a BigQuery.
 - **GitHub Actions** — corre el pipeline en cron y refresca las tablas.
 - **Render** — hostea la API con auto-deploy en cada push.
 
@@ -336,6 +340,31 @@ Respuesta:
 Deploy: Render lee `render.yaml`, construye `api/Dockerfile` y redespliega en cada push que
 toque `api/`. La credencial se inyecta como secreto `GCP_SA_KEY`. Detalle en
 [`api/README.md`](api/README.md).
+
+---
+
+## 📊 El dashboard
+
+Dashboard interactivo (**Streamlit + Plotly**) que lee **en vivo** desde BigQuery
+(`l5_risk_scores` + `l3_user_features`) y cubre el **bonus track** del challenge:
+
+- **Distribución de usuarios por categoría de riesgo** (+ histograma del score).
+- **Top 10 usuarios más críticos** con sus señales explicativas desplegables.
+- **Comparativa de comportamiento vs. peer group** (mismo departamento + rol).
+
+Más KPIs (total, % HIGH+, score máximo) y filtros por departamento / tipo de usuario.
+
+```bash
+# Opción A — un comando, sin Docker (desde la raíz del repo)
+pip install -r dashboard/requirements.txt
+streamlit run dashboard/app.py            # → http://localhost:8501
+
+# Opción B — con Docker Compose
+docker compose up --build dashboard       # → http://localhost:8501
+```
+
+Requiere `conf/local/gcp-key.json` y que el pipeline ya haya poblado las tablas
+(`kedro run`). Detalle en [`dashboard/README.md`](dashboard/README.md).
 
 ---
 

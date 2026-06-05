@@ -28,8 +28,12 @@ pytest tests/test_risk_scoring.py::test_access_without_permission_fires_r1   # u
 # API local
 cd api && uvicorn main:app --reload      # http://localhost:8000 ( /docs = Swagger )
 
-# Docker (kedro + api juntos)
+# Dashboard local (Streamlit, bonus track)
+streamlit run dashboard/app.py           # http://localhost:8501
+
+# Docker (kedro + api + dashboard juntos)
 docker compose up --build                # rebuild OBLIGATORIO tras cambiar código
+docker compose up --build dashboard      # solo el dashboard → http://localhost:8501
 docker compose run --rm kedro kedro run --pipeline=ingest
 ```
 
@@ -73,6 +77,15 @@ Standalone (deps propias en `api/requirements.txt`, su propio Dockerfile). `bq.p
 `l5_risk_scores` en vivo con queries parametrizadas; carga credenciales con fallback (env var
 `GCP_SA_KEY` en prod / archivo local en dev). `main.py` expone `GET /users/{id}/risk`,
 `GET /users?category=&limit=`, `/health`.
+
+### Dashboard (`dashboard/`)
+Standalone (deps propias en `dashboard/requirements.txt`, su propio Dockerfile), **Streamlit +
+Plotly**. Cubre el bonus track: distribución por categoría, top 10 con señales, comparativa vs
+peer group (mismo dept+rol). `bq.py` lee en vivo `l5_risk_scores` (scores) y `l3_user_features`
+(comportamiento) con el mismo fallback de credenciales que la API; construye DataFrames fila a
+fila (sin `to_dataframe`) para no exigir db-dtypes/pyarrow. `app.py` agrega el dir del script a
+`sys.path` para que `import bq` no choque con el directorio `data/` de la raíz. Caché de 5 min
+(`st.cache_data`). Smoke test: `streamlit.testing.v1.AppTest`.
 
 ## Gotchas
 
