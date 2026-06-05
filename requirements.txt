@@ -17,3 +17,11 @@ tqdm>=4.66
 # Testing
 pytest>=8.0
 requests>=2.31
+
+# Notebooks: gráficos interactivos (los notebooks de notebooks/ usan Plotly).
+plotly>=5.24
+
+# NOTA: este requirements.txt es el CORE (pipeline + notebooks) y es el que usa la
+# imagen Docker del pipeline (Dockerfile raíz) — por eso se mantiene liviano, sin
+# FastAPI ni Streamlit. Para un entorno local ÚNICO con TODO (API + dashboard
+# incluidos) usá `requirements-dev.txt` (o `make install`).

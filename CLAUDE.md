@@ -11,6 +11,12 @@ español (docstrings, comentarios y docs).
 
 ## Comandos
 
+> Atajos: `make help` lista todos los targets (`install`, `full`, `pipeline`, `api`,
+> `dashboard`, `test`, `docker`…). **Requirements:** `requirements.txt` es el core
+> (pipeline + notebooks) y lo usa la imagen Docker del pipeline → liviano, sin FastAPI/
+> Streamlit. `requirements-dev.txt` (`-r` de core + api/ + dashboard/) arma un entorno
+> local único con TODO → lo instala `make install`.
+
 ```bash
 # Pipeline (lee/escribe BigQuery — requiere conf/local/gcp-key.json)
 kedro run                          # proceso completo SIN ingesta (default)

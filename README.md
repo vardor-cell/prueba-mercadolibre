@@ -81,41 +81,68 @@ flowchart LR
 ## 🚀 Cómo correr el proyecto
 
 ### Requisitos previos
-1. **Llave de BigQuery** (la comparte el dueño del repo): guardala en
-   **`conf/local/gcp-key.json`**. El PROJECT_ID ya está configurado en
-   `conf/base/globals.yml`, no hay que tocar nada más.
-2. **Docker** (recomendado) o **Python 3.12** (`pip install -r requirements.txt`).
+
+Para reproducir **desde cero** (clon limpio) hacen falta 3 cosas que **no** viven en el
+repo — datos y credenciales nunca se versionan:
+
+1. **Los 3 CSV del challenge** → en `data/01_raw/`:
+   `user_inventory.csv`, `permission_inventory.csv`, `access_logs.csv`.
+2. **Llave de BigQuery** (service account, la comparte el dueño del repo) →
+   en `conf/local/gcp-key.json`.
+3. **Credenciales de Kedro** → creá `conf/local/credentials.yml` con una sola línea:
+   ```yaml
+   gbq_creds: conf/local/gcp-key.json
+   ```
+   (solo apunta a la llave, no contiene secretos; va en `conf/local/` porque Kedro
+   nunca commitea esa carpeta).
+
+El PROJECT_ID y el dataset ya están en `conf/base/globals.yml` — no se toca nada más.
+Además necesitás **Docker** (recomendado) **o** **Python 3.12**.
+
+> **⚠️ Dependencia de BigQuery (decisión de arquitectura).** Pipeline, API y dashboard
+> usan BigQuery como backend de datos. Es deliberado —muestra un diseño en capas,
+> cloud-native y orquestado— pero implica que **sin la llave no se puede correr**. El
+> trade-off y cómo sería una versión 100 % offline están en [Limitaciones](#-limitaciones).
+
+> **Primer arranque (BigQuery vacío):** la primera vez hay que **poblar BQ** con la
+> ingesta antes de scorear. Por eso el primer run usa `full` (= ingest + proceso);
+> después, `kedro run` solo ya alcanza.
 
 ### Opción A — con Docker (recomendado)
 
-Construye las imágenes y levanta los servicios:
-
 ```bash
-docker compose up --build            # construye y levanta: pipeline (kedro) + API
-docker compose up --build api        # solo la API → http://localhost:8000
+# 1) Primer arranque: poblar BQ (CSV → raw) y calcular los scores
+docker compose run --rm kedro kedro run --pipeline=full
+# 2) Levantar todo: pipeline + API (8000) + dashboard (8501)
+docker compose up --build
 ```
 
-Ejecutar pipelines (sin afectar la API que está corriendo):
+| Comando | Qué levanta |
+|---|---|
+| `docker compose up --build` | pipeline (kedro) + API + dashboard |
+| `docker compose up --build api` | solo la API → http://localhost:8000 |
+| `docker compose up --build dashboard` | solo el dashboard → http://localhost:8501 |
+| `docker compose run --rm kedro kedro run --pipeline=full` | ingesta + proceso completo |
+
+> El código se **copia** a la imagen → tras cambiarlo corré `docker compose build`.
+> **Datos** (`data/`) y **credenciales** (`conf/local/`) van por volumen → sin rebuild.
+
+### Opción B — sin Docker (un solo entorno + Makefile)
 
 ```bash
-docker compose run --rm kedro kedro run                    # proceso completo (sin ingesta)
-docker compose run --rm kedro kedro run --pipeline=ingest  # subir CSV local → BigQuery
-docker compose run --rm kedro kedro run --pipeline=full    # ingesta + proceso completo
-docker compose run --rm kedro bash                         # shell interactiva
+make install     # UN entorno con TODO (= pip install -r requirements-dev.txt)
+make full        # primer arranque: ingesta + proceso (CSV → BQ → scores)
+make api         # API       → http://localhost:8000
+make dashboard   # dashboard → http://localhost:8501
 ```
 
-> El código se **copia** a la imagen → tras cambiar código corré `docker compose build`.
-> Los **datos** (`data/`) y las **credenciales** (`conf/local/`) van por volumen → no
-> requieren rebuild.
+`make help` lista todos los atajos (`install`, `pipeline`, `ingest`, `test`, `docker`, …).
 
-### Opción B — sin Docker
-
-```bash
-pip install -r requirements.txt
-kedro run --pipeline=ingest    # carga inicial de los CSV a BigQuery
-kedro run                      # proceso completo
-cd api && uvicorn main:app --reload   # API en http://localhost:8000
-```
+> **Sobre los requirements:** `requirements.txt` es el **core** (pipeline + notebooks) y es
+> el que usa la imagen Docker del pipeline → se mantiene liviano. `requirements-dev.txt`
+> suma `api/` y `dashboard/` para tener **un solo entorno local** con todo (`make install`).
+> Los servicios `api/` y `dashboard/` conservan su requirements propio para sus imágenes
+> Docker independientes.
 
 ### Pipelines disponibles
 
@@ -459,6 +486,23 @@ no es una probabilidad real, solo sirve para ordenar.
 - **Lo más importante — ejemplos reales de incidentes confirmados** (que el equipo de seguridad
   diga "este sí fue un ataque"). Con eso el modelo podría **aprender de casos verdaderos** y,
   recién ahí, medir de verdad cuántos atrapa.
+
+### Acoplamiento a BigQuery (reproducibilidad)
+
+Todo el flujo (pipeline, API y dashboard) usa **BigQuery como backend**. Fue una decisión
+**deliberada** para mostrar un diseño cloud-native: datos en capas (`l1`→`l5`), queries
+parametrizadas, orquestación por cron y servicios que consultan en vivo. El **costo** es que
+un evaluador con un clon limpio **no puede correr nada sin la llave de BigQuery** — choca con
+el requisito del challenge de "ejecutarse sobre los 3 CSV sin dependencias externas".
+
+Cómo se cerraría ese gap (no implementado, por alcance):
+
+- **Modo local en API/dashboard**: si no hay credenciales de BQ, leer de los CSV de salida
+  locales (`data/07_model_output/risk_scores.csv`, `data/03_primary/user_features.csv`). Hace
+  que "ver resultados" funcione sin llave, una vez corrido el pipeline.
+- **Catálogo offline**: un `conf/local/catalog.yml` alternativo que mapee los datasets a
+  `CSVDataset` en vez de `GBQTableDataset`, para correr el pipeline **end-to-end sin BQ** desde
+  los 3 CSV. Cumpliría el requisito al 100 % a cambio de mantener dos catálogos.
 
 ---
 

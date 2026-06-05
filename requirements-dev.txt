@@ -1,0 +1,10 @@
+# Entorno local ÚNICO — instala TODO en un solo venv:
+#   pipeline + notebooks (requirements.txt) + API (api/) + dashboard (dashboard/).
+#
+# Uso:  pip install -r requirements-dev.txt   (o `make install`)
+#
+# Los servicios api/ y dashboard/ mantienen su requirements propio para sus
+# imágenes Docker independientes; acá los reunimos para desarrollo local.
+-r requirements.txt
+-r api/requirements.txt
+-r dashboard/requirements.txt
