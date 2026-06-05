@@ -14,27 +14,150 @@ partir de inventario de usuarios, permisos y logs de acceso. Combina **reglas du
 deterministas** (mapeadas a MITRE ATT&CK) con un **ensemble de Machine Learning no
 supervisado**, y modula el resultado por el **impacto** (blast radius) de cada usuario.
 
-🌐 **Backend desplegado:** https://risk-profiling-api.onrender.com — doc interactiva en
-[`/docs`](https://risk-profiling-api.onrender.com/docs)
-*(plan free: la primera petición tras 15 min inactivo tarda ~30–60s por cold start)*
+**Qué entrega:** un puntaje `0–100` y una **categoría** (`LOW` → `VERY_HIGH`) por usuario,
+junto con las **señales** que explican cada caso — expuesto vía **API REST** y un
+**dashboard interactivo**.
 
+🌐 **Backend en vivo:** https://risk-profiling-api.onrender.com · doc interactiva en
+[`/docs`](https://risk-profiling-api.onrender.com/docs)
+*(plan free: la 1ª petición tras 15 min inactivo tarda ~30–60 s por cold start)*
 📄 **Diseño detallado del modelo:** [`docs/MODELO_RIESGO.md`](docs/MODELO_RIESGO.md)
 
 ---
 
 ## 📑 Índice
 
-1. [Arquitectura](#-arquitectura)
-2. [Cómo correr el proyecto](#-cómo-correr-el-proyecto)
-3. [Flujo de datos y capas](#-flujo-de-datos-y-capas)
-4. [El modelo de scoring](#-el-modelo-de-scoring)
-5. [Métricas del modelo](#-métricas-del-modelo)
-6. [La API REST](#-la-api-rest)
-7. [El dashboard](#-el-dashboard)
-8. [Hallazgos principales](#-hallazgos-principales)
-9. [Decisiones de modelado](#-decisiones-de-modelado)
-10. [Limitaciones](#-limitaciones)
-11. [Monitoreo en producción](#-monitoreo-en-producción)
+1. [Cómo correr el proyecto](#-cómo-correr-el-proyecto) ← **empezá acá**
+2. [Estructura del repo](#-estructura-del-repo)
+3. [Arquitectura](#-arquitectura)
+4. [Flujo de datos y capas](#-flujo-de-datos-y-capas)
+5. [El modelo de scoring](#-el-modelo-de-scoring)
+6. [Métricas del modelo](#-métricas-del-modelo)
+7. [La API REST](#-la-api-rest)
+8. [El dashboard](#-el-dashboard)
+9. [Hallazgos principales](#-hallazgos-principales)
+10. [Decisiones de modelado](#-decisiones-de-modelado)
+11. [Limitaciones](#-limitaciones)
+12. [Monitoreo en producción](#-monitoreo-en-producción)
+
+---
+
+## 🚀 Cómo correr el proyecto
+
+> **TL;DR** — ubicá los 3 CSV y la llave (pasos 1–3), después:
+> ```bash
+> docker compose run --rm kedro kedro run --pipeline=full   # poblar BQ + scorear
+> docker compose up --build                                 # API (8000) + dashboard (8501)
+> ```
+
+### 1. Lo que tenés que conseguir antes
+
+El repo **no incluye** ni los datos ni las credenciales (nunca se versionan). Conseguí estas
+3 cosas y ponelas en su carpeta:
+
+| # | Qué | Dónde va | De dónde sale |
+|---|---|---|---|
+| 1 | Los **3 CSV** del challenge (`user_inventory.csv`, `permission_inventory.csv`, `access_logs.csv`) | `data/01_raw/` | vienen con el challenge |
+| 2 | La **llave de BigQuery** (`gcp-key.json`, service account) | `conf/local/gcp-key.json` | la comparte el dueño del repo |
+| 3 | El **archivo de credenciales de Kedro** (`credentials.yml`) | `conf/local/credentials.yml` | lo creás vos (1 línea ↓) |
+
+El paso 3 es un archivo de **una sola línea** que le dice a Kedro dónde está la llave:
+
+```yaml
+# conf/local/credentials.yml
+gbq_creds: conf/local/gcp-key.json
+```
+
+> No contiene secretos (solo apunta a la llave), pero va en `conf/local/` porque, por
+> convención, Kedro **nunca commitea esa carpeta**. El PROJECT_ID y el dataset ya están en
+> `conf/base/globals.yml` — no hay que tocar nada más.
+
+Y además: **Docker** (camino recomendado) **o** **Python 3.12** (camino manual).
+
+> **⚠️ Sin la llave de BigQuery no se puede correr.** Todo el sistema (pipeline, API y
+> dashboard) usa BigQuery como base de datos. Es una decisión de arquitectura deliberada; el
+> porqué —y cómo sería una versión 100 % offline— están en [Limitaciones](#-limitaciones).
+
+### 2. Primer arranque: hay que poblar BigQuery
+
+La primera vez, BigQuery está **vacío**. Antes de poder calcular scores hay que **subir los
+CSV** (la "ingesta"). Por eso el primer comando usa `full` (= ingesta **+** proceso completo).
+Después, con los datos ya en BQ, alcanza con `kedro run` a secas.
+
+### 3a. Camino A — con Docker (recomendado)
+
+```bash
+# 1) Primer arranque: subir los CSV a BQ y calcular los scores
+docker compose run --rm kedro kedro run --pipeline=full
+
+# 2) Levantar los servicios: API + dashboard
+docker compose up --build
+```
+
+| Comando | Qué hace |
+|---|---|
+| `docker compose up --build` | Levanta pipeline + **API** (`:8000`) + **dashboard** (`:8501`) |
+| `docker compose up --build api` | Solo la API → http://localhost:8000 |
+| `docker compose up --build dashboard` | Solo el dashboard → http://localhost:8501 |
+| `docker compose run --rm kedro kedro run --pipeline=full` | Ingesta + proceso completo |
+| `docker compose down` | Baja todo |
+
+> El código se **copia** a la imagen → si lo cambiás, corré `docker compose build` de nuevo.
+> Los **datos** y las **credenciales** van montados como volumen → esos no requieren rebuild.
+
+### 3b. Camino B — sin Docker (un solo entorno + Makefile)
+
+```bash
+make install     # crea UN entorno con TODO (pipeline + notebooks + API + dashboard)
+make full        # primer arranque: ingesta + proceso (CSV → BQ → scores)
+make api         # API       → http://localhost:8000
+make dashboard   # dashboard → http://localhost:8501
+```
+
+`make help` lista todos los atajos. Los más usados:
+
+| Target | Qué hace |
+|---|---|
+| `make install` | Instala todo en un solo venv (= `pip install -r requirements-dev.txt`) |
+| `make full` | Ingesta + proceso completo (primer arranque) |
+| `make pipeline` | Proceso completo **sin** ingesta (lee raw de BQ) |
+| `make api` · `make dashboard` | Levanta la API / el dashboard |
+| `make test` | Tests unitarios (sin red ni BigQuery) |
+
+### Los pipelines de Kedro por dentro
+
+| Comando | Qué hace | Nodos |
+|---|---|---|
+| `kedro run` | Proceso completo **sin** ingesta (lee raw de BQ) | 9 |
+| `kedro run --pipeline=ingest` | Sube los CSV locales a BigQuery | 3 |
+| `kedro run --pipeline=full` | Ingesta + proceso completo | 12 |
+| `kedro run --tags=train` / `--tags=score` | Solo entrenar / solo scorear | — |
+
+> **Sobre los requirements:** `requirements.txt` es el **core** (pipeline + notebooks) y es el
+> que usa la imagen Docker del pipeline → se mantiene liviano. `requirements-dev.txt` le suma
+> la API y el dashboard para tener **un solo entorno local** con todo (`make install`). La
+> orquestación (GitHub Actions) y el deploy (Render) ya están configurados por el dueño del
+> repo — no hace falta montarlos para correr el proyecto.
+
+---
+
+## 📁 Estructura del repo
+
+```
+.
+├── data/01_raw/              # ← acá van los 3 CSV del challenge (gitignored)
+├── conf/
+│   ├── base/                 #   config versionada: catalog, globals, parameters
+│   └── local/                # ← acá van la llave + credentials.yml (gitignored)
+├── src/prueba_mercadolibre/  #   pipelines Kedro: ingest · data_processing · risk_scoring
+├── api/                      #   API REST (FastAPI) — standalone, con su propio Dockerfile
+├── dashboard/                #   Dashboard (Streamlit + Plotly) — standalone
+├── notebooks/                #   EDA + tuning + sensibilidad (entregables de análisis)
+├── tests/                    #   unitarios + integración
+├── docs/                     #   CHALLENGE.md + MODELO_RIESGO.md
+├── Makefile                  #   atajos de un comando (make help)
+└── docker-compose.yml        #   pipeline + API + dashboard
+```
 
 ---
 
@@ -75,86 +198,6 @@ flowchart LR
 - **Docker Compose** — corre pipeline + API + dashboard localmente, conectados a BigQuery.
 - **GitHub Actions** — corre el pipeline en cron y refresca las tablas.
 - **Render** — hostea la API con auto-deploy en cada push.
-
----
-
-## 🚀 Cómo correr el proyecto
-
-### Requisitos previos
-
-Para reproducir **desde cero** (clon limpio) hacen falta 3 cosas que **no** viven en el
-repo — datos y credenciales nunca se versionan:
-
-1. **Los 3 CSV del challenge** → en `data/01_raw/`:
-   `user_inventory.csv`, `permission_inventory.csv`, `access_logs.csv`.
-2. **Llave de BigQuery** (service account, la comparte el dueño del repo) →
-   en `conf/local/gcp-key.json`.
-3. **Credenciales de Kedro** → creá `conf/local/credentials.yml` con una sola línea:
-   ```yaml
-   gbq_creds: conf/local/gcp-key.json
-   ```
-   (solo apunta a la llave, no contiene secretos; va en `conf/local/` porque Kedro
-   nunca commitea esa carpeta).
-
-El PROJECT_ID y el dataset ya están en `conf/base/globals.yml` — no se toca nada más.
-Además necesitás **Docker** (recomendado) **o** **Python 3.12**.
-
-> **⚠️ Dependencia de BigQuery (decisión de arquitectura).** Pipeline, API y dashboard
-> usan BigQuery como backend de datos. Es deliberado —muestra un diseño en capas,
-> cloud-native y orquestado— pero implica que **sin la llave no se puede correr**. El
-> trade-off y cómo sería una versión 100 % offline están en [Limitaciones](#-limitaciones).
-
-> **Primer arranque (BigQuery vacío):** la primera vez hay que **poblar BQ** con la
-> ingesta antes de scorear. Por eso el primer run usa `full` (= ingest + proceso);
-> después, `kedro run` solo ya alcanza.
-
-### Opción A — con Docker (recomendado)
-
-```bash
-# 1) Primer arranque: poblar BQ (CSV → raw) y calcular los scores
-docker compose run --rm kedro kedro run --pipeline=full
-# 2) Levantar todo: pipeline + API (8000) + dashboard (8501)
-docker compose up --build
-```
-
-| Comando | Qué levanta |
-|---|---|
-| `docker compose up --build` | pipeline (kedro) + API + dashboard |
-| `docker compose up --build api` | solo la API → http://localhost:8000 |
-| `docker compose up --build dashboard` | solo el dashboard → http://localhost:8501 |
-| `docker compose run --rm kedro kedro run --pipeline=full` | ingesta + proceso completo |
-
-> El código se **copia** a la imagen → tras cambiarlo corré `docker compose build`.
-> **Datos** (`data/`) y **credenciales** (`conf/local/`) van por volumen → sin rebuild.
-
-### Opción B — sin Docker (un solo entorno + Makefile)
-
-```bash
-make install     # UN entorno con TODO (= pip install -r requirements-dev.txt)
-make full        # primer arranque: ingesta + proceso (CSV → BQ → scores)
-make api         # API       → http://localhost:8000
-make dashboard   # dashboard → http://localhost:8501
-```
-
-`make help` lista todos los atajos (`install`, `pipeline`, `ingest`, `test`, `docker`, …).
-
-> **Sobre los requirements:** `requirements.txt` es el **core** (pipeline + notebooks) y es
-> el que usa la imagen Docker del pipeline → se mantiene liviano. `requirements-dev.txt`
-> suma `api/` y `dashboard/` para tener **un solo entorno local** con todo (`make install`).
-> Los servicios `api/` y `dashboard/` conservan su requirements propio para sus imágenes
-> Docker independientes.
-
-### Pipelines disponibles
-
-| Comando | Qué hace | Nodos |
-|---|---|---|
-| `kedro run` | Proceso completo **sin** ingesta (lee raw de BQ) | 9 |
-| `kedro run --pipeline=ingest` | Sube los CSV locales a BigQuery | 3 |
-| `kedro run --pipeline=full` | Ingesta + proceso completo | 12 |
-| `kedro run --tags=train` / `--tags=score` | Solo entrenar / solo scorear | — |
-
-> La orquestación (GitHub Actions, cron) y el deploy de la API (Render) ya están
-> configurados por el dueño del repo — no hace falta montarlos para correr el proyecto.
 
 ---
 
@@ -370,7 +413,7 @@ toque `api/`. La credencial se inyecta como secreto `GCP_SA_KEY`. Detalle en
 
 ---
 
-## 📊 El dashboard
+## 🖥️ El dashboard
 
 Dashboard interactivo (**Streamlit + Plotly**) que lee **en vivo** desde BigQuery
 (`l5_risk_scores` + `l3_user_features`) y cubre el **bonus track** del challenge:
@@ -379,19 +422,11 @@ Dashboard interactivo (**Streamlit + Plotly**) que lee **en vivo** desde BigQuer
 - **Top 10 usuarios más críticos** con sus señales explicativas desplegables.
 - **Comparativa de comportamiento vs. peer group** (mismo departamento + rol).
 
-Más KPIs (total, % HIGH+, score máximo) y filtros por departamento / tipo de usuario.
+Más KPIs (total de usuarios, % HIGH+, score máximo) y filtros por departamento / tipo de usuario.
 
-```bash
-# Opción A — un comando, sin Docker (desde la raíz del repo)
-pip install -r dashboard/requirements.txt
-streamlit run dashboard/app.py            # → http://localhost:8501
-
-# Opción B — con Docker Compose
-docker compose up --build dashboard       # → http://localhost:8501
-```
-
-Requiere `conf/local/gcp-key.json` y que el pipeline ya haya poblado las tablas
-(`kedro run`). Detalle en [`dashboard/README.md`](dashboard/README.md).
+▶️ Se levanta con `make dashboard` o `docker compose up --build dashboard` →
+http://localhost:8501 (ver [Cómo correr](#-cómo-correr-el-proyecto)). Detalle en
+[`dashboard/README.md`](dashboard/README.md).
 
 ---
 
@@ -440,8 +475,6 @@ MITRE T1078.004 + T1098 + T1119.
   (LOW→VERY_HIGH). Entonces la base de datos de pagos y un panel interno cuentan **igual**
   si ambos son VERY_HIGH, aunque filtrar la primera sea peor. Es una medida con poca
   resolución (los datos solo dan 4 categorías).
-- Elegimos la fórmula **simple y estable** en vez de la "perfecta en el papel" (Probabilidad ×
-  Impacto puro), porque esa última hundía a usuarios muy sospechosos de bajo impacto.
 
 ---
 
